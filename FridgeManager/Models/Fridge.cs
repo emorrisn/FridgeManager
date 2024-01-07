@@ -14,52 +14,84 @@ using System.Text.Json;
 using JsonConstructorAttribute = System.Text.Json.Serialization.JsonConstructorAttribute;
 using JsonIgnoreAttribute = System.Text.Json.Serialization.JsonIgnoreAttribute;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+using System.Net.Http.Headers;
 
 namespace FridgeManager.Models
 {
-    class Fridge
+
+    public class Appliance: Model
+    {
+        public virtual string Brand { get; set; }
+        public virtual string Model { get; set; }
+
+        public virtual string DisplayInfo()
+        {
+            return $"Brand: {Brand} | Model: {Model}";
+        }
+    }
+
+    class Fridge : Appliance
     {
         // Attributes
-        public string UUID { get; set; }
         public bool Powered { get; set; }
         public bool HasFridge { get; set; }
         public bool HasFreezer { get; set; }
         public string Room { get; set; }
         public string Color { get; set; }
-        public string Model { get; set; }
+        public override string Brand { get; set; }
+        public override string Model { get; set; }
         public bool HasIceMaker { get; set; }
         public bool HasWaterDispenser { get; set; }
 
-        public List<Report> Reports { get; set; } = new List<Report>();
+        public List<Report> Reports { get; set; } = new List<Report>(100);
 
-        private int _temperature;
+        private int temperature;
+
         public int Temperature
         {
-            get { return _temperature; }
+            get => temperature;
             set
             {
-                if (value >= -10 && value <= 10) // Validation
+                // Validate that the temperature is within a reasonable range (e.g., -20 to 10 degrees Celsius)
+                if (value >= -20 && value <= 10)
                 {
-                    _temperature = value;
+                    temperature = value;
                 }
                 else
                 {
-                    Console.WriteLine("[!] Invalid temperature value");
+                    // Log or throw an exception for invalid temperature
+                    Console.WriteLine("[!] Invalid temperature. Temperature should be between -20 and 10 degrees Celsius.");
                 }
             }
         }
-        public int Capacity { get; set; }
+
+        public override string DisplayInfo()
+        {
+            return $"{Brand} Fridge, Model: {Model}";
+        }
+        private int capacity;
+
+        // Property with validation using IsValidCapacity method
+        public int Capacity
+        {
+            get { return capacity; }
+            set
+            {
+                if (IsValidCapacity(value))
+                {
+                    capacity = value;
+                }
+                else
+                {
+                    Console.WriteLine("Invalid capacity value. Capacity must be greater than 0.");
+                    // You might want to throw an exception or handle the error accordingly
+                }
+            }
+        }
         public int TemperatureSetting { get; set; }
-        // public List<Item> Contents { get; } = new List<Item>();
+        public List<Item> Contents { get; set; } = new List<Item>(100);
 
-        // Testing data:
-        public List<Item> Contents = new List<Item>
-                    {
-                        new Item { Name = "Milk", Quantity = 1, ExpirationDate = DateTime.Now.AddDays(2), Category = new ItemCategory { Name = "Dairy" } },
-                        new Item { Name = "Eggs", Quantity = 12, ExpirationDate = DateTime.Now.AddDays(5), Category = new ItemCategory { Name = "Produce" } },
-                    };
-
-        public List<User> Users { get; set; } = new List<User>();
+        public List<User> Users { get; set; } = new List<User>(10);
         public string SaveLocation { get; set; }
         
         // Amount of days until an expiry warning
@@ -97,7 +129,7 @@ namespace FridgeManager.Models
 
         [JsonConstructor]
         public Fridge(string uuid = "", bool powered = false, bool hasFridge = false, bool hasFreezer = false, string room = "kitchen", string color = "white",
-                  string model = "base", bool hasIceMaker = false, bool hasWaterDispenser = false, int temperature = 0, int capacity = 1, int temperatureSetting = 0, string saveLocation = "", Dictionary<string, int> reportFrequencies = null, Dictionary<string, DateTime> maintenanceDates = null, int expiryReportDays = 3, int maintenanceReportDays = 3)
+                  string brand = "unknown", string model = "base", bool hasIceMaker = false, bool hasWaterDispenser = false, int temperature = 0, int capacity = 1, int temperatureSetting = 0, string saveLocation = "", Dictionary<string, int> reportFrequencies = null, Dictionary<string, DateTime> maintenanceDates = null, int expiryReportDays = 3, int maintenanceReportDays = 3, List<Item> contents = null)
         {
 
             UUID = FridgeManager.setUUID(uuid);
@@ -106,6 +138,7 @@ namespace FridgeManager.Models
             HasFreezer = hasFreezer;
             Room = room;
             Color = color;
+            Brand = brand;
             Model = model;
             HasIceMaker = hasIceMaker;
             HasWaterDispenser = hasWaterDispenser;
@@ -117,6 +150,8 @@ namespace FridgeManager.Models
             ReportFrequencies = reportFrequencies;
             MaintenanceReportDays = maintenanceReportDays;
             MaintenanceDates = maintenanceDates;
+
+            Contents = contents ?? new List<Item>(1);
         }
 
         public Fridge(Dictionary<string, string> input, string uuid = "")
@@ -127,29 +162,88 @@ namespace FridgeManager.Models
             HasFreezer = bool.Parse(input.GetValueOrDefault("HasFreezer", "false"));
             Room = input.GetValueOrDefault("Room", "kitchen");
             Color = input.GetValueOrDefault("Colour", "white");
-            Model = input.GetValueOrDefault("Brand", "base");
+            Brand = input.GetValueOrDefault("Brand", "base");
+            Model = input.GetValueOrDefault("Model", "base");
             HasIceMaker = bool.Parse(input.GetValueOrDefault("HasIceMaker", "false"));
             HasWaterDispenser = bool.Parse(input.GetValueOrDefault("HasWaterDispenser", "false"));
             Temperature = int.Parse(input.GetValueOrDefault("Temperature", "0"));
             Capacity = int.Parse(input.GetValueOrDefault("Capacity", "1"));
             TemperatureSetting = int.Parse(input.GetValueOrDefault("Temperature_setting", "0"));
             SaveLocation = input.GetValueOrDefault("SaveLocation", ".");
+            ExpiryReportDays = int.Parse(input.GetValueOrDefault("ExpiryReportDays", "3"));
+            MaintenanceReportDays = int.Parse(input.GetValueOrDefault("MaintenanceReportDays", "30"));
+            ReportFrequencies["Shopping"] = int.Parse(input.GetValueOrDefault("ReportFrequencyShopping", "1"));
+            ReportFrequencies["Maintenance"] = int.Parse(input.GetValueOrDefault("ReportFrequencyMaintenance", "7"));
+            ReportFrequencies["Expiry"] = int.Parse(input.GetValueOrDefault("ReportFrequencyExpiry", "7"));
+        }
+
+        public Fridge(Fridge other)
+        {
+            // Copy the properties from the existing instance
+            UUID = other.UUID;
+            Powered = other.Powered;
+            HasFridge = other.HasFridge;
+            HasFreezer = other.HasFreezer;
+            Room = other.Room;
+            Color = other.Color;
+            Brand = other.Brand;
+            Model = other.Model;
+            HasIceMaker = other.HasIceMaker;
+            HasWaterDispenser = other.HasWaterDispenser;
+            Temperature = other.Temperature;
+            Capacity = other.Capacity;
+            TemperatureSetting = other.TemperatureSetting;
+            SaveLocation = other.SaveLocation;
+            ExpiryReportDays = other.ExpiryReportDays;
+
+            // Copy ReportFrequencies dictionary
+            if (other.ReportFrequencies != null)
+            {
+                ReportFrequencies = new Dictionary<string, int>(other.ReportFrequencies);
+            }
+            else
+            {
+                ReportFrequencies = null;
+            }
+
+            MaintenanceReportDays = other.MaintenanceReportDays;
+
+            // Copy MaintenanceDates dictionary
+            if (other.MaintenanceDates != null)
+            {
+                MaintenanceDates = new Dictionary<string, DateTime>(other.MaintenanceDates);
+            }
+            else
+            {
+                MaintenanceDates = null;
+            }
+
+            // Copy the contents list
+            if (other.Contents != null)
+            {
+                Contents = new List<Item>(other.Contents);
+            }
+            else
+            {
+                Contents = null;
+            }
         }
 
         public static Fridge Load(string path)
         {
-            string json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Fridge>(json);
-        }
-
-        public static void AddUser()
-        {
-            // TODO: Add user to list
-        }
-
-        public static void RemoveUser()
-        {
-            // TODO: Add user to list
+            try
+            {
+                string json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<Fridge>(json);
+            }
+            catch (NotSupportedException e) {
+                Console.WriteLine("[!] Error loading fridge: Config file is corrupted or needs fixing.");
+                Console.WriteLine(e.Message);
+            } catch(Exception ex)
+            {
+                Console.WriteLine($"[!] Error loading fridge: {ex.Message}");
+            }
+            return null;
         }
 
         public void Save(string path)
@@ -160,35 +254,53 @@ namespace FridgeManager.Models
                 File.WriteAllText(path, json);
                 Console.WriteLine("[i] Fridge saved successfully.");
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.WriteLine($"[!] Unauthorized access: {ex.Message}");
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"[!] I/O error: {ex.Message}");
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"[!] Error saving fridge: {ex.Message}");
             }
         }
 
-        public void AddItem(Item item)
+        public static bool validateInput(Dictionary<string, string> userInput)
         {
-            Contents.Add(item);
-        }
+            if (string.IsNullOrEmpty(userInput["Room"]))
+            {
+                Console.WriteLine("\n{!} Room cannot be empty.");
+                return false;
+            }
 
-        public void RemoveItem(Item item)
-        {
-            Contents.Remove(item);
-        }
+            if (string.IsNullOrEmpty(userInput["Brand"]))
+            {
+                Console.WriteLine("\n{!} Brand cannot be empty.");
+                return false;
+            }
 
-        public bool HasCapacityFor(Item item)
-        {
-            return Contents.Count < Capacity;
-        }
+            if (string.IsNullOrEmpty(userInput["Model"]))
+            {
+                Console.WriteLine("\n{!} Model cannot be empty.");
+                return false;
+            }
 
-        public void PowerOn()
-        {
-            Powered = true;
-        }
+            if (string.IsNullOrEmpty(userInput["Colour"]))
+            {
+                Console.WriteLine("\n{!} Colour cannot be empty.");
+                return false;
+            }
 
-        public void PowerOff()
-        {
-            Powered = false;
+            if (!int.TryParse(userInput["Capacity"], out _))
+            {
+                Console.WriteLine("\n{!} Capacity must be a valid integer.");
+                return false;
+            }
+
+            return true;
         }
     }
 }

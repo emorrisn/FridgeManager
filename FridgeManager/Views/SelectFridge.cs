@@ -25,7 +25,24 @@ namespace FridgeManager
 
             CreateDirectory(Path.Combine(FridgeManager.WorkingDirectory, "fridges"));
 
-            string selection = UI.Selector(GetFridgeOptions(), "Available fridges:");
+            StringBuilder header = new StringBuilder();
+
+            string[] headerText = {
+                "\r\n",
+                "  ███████ ██████  ██ ██████   ██████  ███████     ███    ███  █████  ███    ██  █████   ██████  ███████ ██████  ",
+                "  ██      ██   ██ ██ ██   ██ ██       ██          ████  ████ ██   ██ ████   ██ ██   ██ ██       ██      ██   ██ ",
+                "  █████   ██████  ██ ██   ██ ██   ███ █████       ██ ████ ██ ███████ ██ ██  ██ ███████ ██   ███ █████   ██████  ",
+                "  ██      ██   ██ ██ ██   ██ ██    ██ ██          ██  ██  ██ ██   ██ ██  ██ ██ ██   ██ ██    ██ ██      ██   ██ ",
+                "  ██      ██   ██ ██ ██████   ██████  ███████     ██      ██ ██   ██ ██   ████ ██   ██  ██████  ███████ ██   ██ ",
+                "\n\nAvailable Fridges:"
+            };
+
+            foreach (string line in headerText)
+            {
+                header.AppendLine(line);
+            }
+
+            string selection = UI.Selector(GetFridgeOptions(), header.ToString());
 
             return SetupFridge(selection);
         }
@@ -76,32 +93,35 @@ namespace FridgeManager
 
             string folderlocation = Path.Combine(path, "fridges", ("fridge-" + uuid.Split("-")[0]), "fridge.json");
 
-            Dictionary<string, string> formResponse = UI.Form(new Dictionary<string, object>()
+            Dictionary<string, string> formResponse = UI.Form(new List<FormField>(13)
             {
-                { "0:Powered", new object[] { "Powered", false } },
-                { "1:HasFridge", new object[] { "Fridge", false } },
-                { "2:HasFreezer", new object[] { "Freezer", false } },
-                { "3:HasIceMaker", new object[] { "Has Ice Maker", false } },
-                { "4:HasWaterDispenser ", new object[] { "Has Water Dispenser", false } },
-                { "5:Room", new object[] { "Room", "" } },
-                { "6:Brand", new object[] { "Brand", "" } },
-                { "7:Model", new object[] { "Model", "" } },
-                { "8:Colour", new object[] { "Colour", "White" } },
-                { "9:Capacity", new object[] { "Capacity (L)", 0 } },
-                { "10:Temperature", new object[] { "Temperature (C)", 0 } },
-                { "11:Temperature_setting", new object[] { "Temperature Setting", 0 } },
-                { "12:SaveLocation", new object[] { "Save Location", folderlocation } },
+                new FormField { ID = 0, Name = "Powered", Label = "Powered", Value = false },
+                new FormField { ID = 1, Name = "HasFridge", Label = "Fridge", Value = false },
+                new FormField { ID = 2, Name = "HasFreezer", Label = "Freezer", Value = false },
+                new FormField { ID = 3, Name = "HasIceMaker", Label = "Has Ice Maker", Value = false },
+                new FormField { ID = 4, Name = "HasWaterDispenser", Label = "Has Water Dispenser", Value = false },
+                new FormField { ID = 5, Name = "Room", Label = "Room" },
+                new FormField { ID = 6, Name = "Brand", Label = "Brand" },
+                new FormField { ID = 7, Name = "Model", Label = "Model" },
+                new FormField { ID = 8, Name = "Colour", Label = "Colour", Value = "White" },
+                new FormField { ID = 9, Name = "Capacity", Label = "Capacity", Value = 0 },
+                new FormField { ID = 10, Name = "Temperature", Label = "Temperature", Value = 0 },
+                new FormField { ID = 11, Name = "Temperature_setting", Label = "Temperature Setting", Value = 0 },
+                new FormField { ID = 12, Name = "SaveLocation", Label = "Save Location", Value = folderlocation }
             });
 
-            Fridge fridge = new Fridge(formResponse, uuid);
+            if (Fridge.validateInput(formResponse))
+            {
+                Fridge fridge = new Fridge(formResponse, uuid);
 
-            CreateDirectory(Path.Combine(path, "fridges", ("fridge-" + uuid.Split("-")[0])));
+                CreateDirectory(Path.Combine(path, "fridges", ("fridge-" + uuid.Split("-")[0])));
 
-            return fridge;
+                return fridge;
+            }
+
+            return null;
 
         }
-
-
     }
 
 }

@@ -13,6 +13,7 @@ using Formatting = Newtonsoft.Json.Formatting;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection.PortableExecutable;
 using FridgeManager.Models;
+using System.Reflection.Emit;
 
 namespace FridgeManager
 {
@@ -24,7 +25,7 @@ namespace FridgeManager
             Console.Clear();
 
             Fridge fridge = FridgeManager.SelectedFridge;
-            List<User> newUsers = new List<User>();
+            List<User> newUsers = new List<User>(5);
 
             if (skipDialogue == false)
             {
@@ -43,14 +44,27 @@ namespace FridgeManager
                 Console.Title = "FridgeManager: Setup New User (" + (FridgeManager.SelectedFridge.Users.Count + 1) + ") for your Fridge";
                 Console.Clear();
 
-                User user = new User(UI.Form(new Dictionary<string, object>() {
-                    { "0:Name", new object[] { "Name", "" } },
-                    { "1:Email", new object[] { "Email", "" } },
-                    { "2:Password", new object[] { "Password", "" } },
-                    { "3:Role", new object[] { "Role", new string[] { "Owner", "User", "Guest" } } },
-                }));
+                HashSet<string> roles = new HashSet<string>();
 
-                newUsers.Add(user);
+                roles.Add("Owner");
+                roles.Add("User");
+                roles.Add("Guest");
+
+                Dictionary<string, string> formResponse = UI.Form(new List<FormField>(3) {
+                    new FormField { ID = 0, Name = "Name", Label = "Name" },
+                    new FormField { ID = 1, Name = "Email", Label = "Email" },
+                    new FormField { ID = 2, Name = "Role", Label = "Role", Options = roles },
+                });
+
+                if (User.validateInput(formResponse))
+                {
+                    User user = new User(formResponse);
+                    newUsers.Add(user);
+                } else
+                {
+                    Console.WriteLine("[i] Skipping user, please try again...");
+                    Console.ReadLine();
+                }
 
                 string selection = UI.Selector(new string[] { "Yes", "No" }, "Continue adding users?", true);
 

@@ -13,11 +13,16 @@ using Formatting = Newtonsoft.Json.Formatting;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection.PortableExecutable;
 using FridgeManager.Models;
+using System.Reflection.Emit;
+using System.ComponentModel.Design;
 
 namespace FridgeManager
 {
     class View
     {
+        // Generate shorthand variables for the selected fridge and user
+        protected Fridge sf = FridgeManager.SelectedFridge;
+        protected User su = FridgeManager.SelectedUser;
 
         protected bool CreateDirectory(string path)
         {
@@ -36,14 +41,12 @@ namespace FridgeManager
             Console.Title = "FridgeManager: Main Menu";
             Console.Clear();
 
-            Fridge sf = FridgeManager.SelectedFridge;
-            User su = FridgeManager.SelectedUser;
+            StringBuilder headerBuilder = new StringBuilder();
+            headerBuilder.AppendLine($"\n  Welcome {su.Name} ({su.Role}),");
+            headerBuilder.AppendLine($"  Currently viewing {sf.DisplayInfo()}");
+            headerBuilder.AppendLine($"  {sf.Temperature}°C | {DateTime.Now.ToString("dddd, dd MMMM yyyy HH:mm")}");
+            string header = headerBuilder.ToString();
 
-            string header = @$"
-  Welcome {su.Name} ({su.Role}),
-  Currently viewing {sf.Model} in {sf.Room}
-  {sf.Temperature}°C | {DateTime.Now.ToString("dddd, dd MMMM yyyy HH:mm")}
-  ";
             return UI.Selector(new string[]
             {
                     $"Items ({sf.Contents.Count()}) - View & manage items inside the fridge",
@@ -53,264 +56,232 @@ namespace FridgeManager
                     $"Shopping List ({su.ShoppingList.Count()}) - View & manage the shopping list linked to your account",
                     $"Notifications ({su.Notifications.Count()}) - View & manage recipes linked to your account",
                     "Account - Change user account settings",
+                    "Exit - Exit the fridge manager application",
             }, header);
         }
 
-        public void displayReportsMenu()
-        {
-            Console.Title = "FridgeManager: Reports";
-            Console.Clear();
-
-            Fridge sf = FridgeManager.SelectedFridge;
-            User su = FridgeManager.SelectedUser;
-
-            string header = @$"
-  Currently viewing reports
-  Listing: {sf.Reports.Count()}
-  ";
-
-            List<string> reportStrings = new List<string>();
-
-            reportStrings.Add("Go Back");
-            reportStrings.Add("Clear All");
-            reportStrings.Add("");
-
-            reportStrings.AddRange(sf.Reports.Select(report => $"{report.DateGenerated.ToString()} {report.ReportType} - {report.UUID}").ToList());
-
-            string selection = UI.Selector(reportStrings.ToArray(), header);
-
-            switch (selection)
-            {
-                case string c when c.Contains("Clear All"):
-                    sf.Reports.Clear();
-                    sf.Save(sf.SaveLocation);
-                    displayReportsMenu();
-                    break;
-                case string c when c.Contains("Report"):
-                    int indexOfDash = selection.IndexOf('-');
-                    string uuid = selection.Substring(indexOfDash + 1).Trim();
-                    Report report = sf.Reports.FirstOrDefault(r => r.UUID == uuid);
-                    displayReportDetailsMenu(report);
-                    sf.Save(sf.SaveLocation);
-                    displayReportsMenu();
-                    break;
-                case "":
-                    displayReportsMenu();
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        public void displayReportDetailsMenu(Report report)
-        {
-            Console.Title = "FridgeManager: Report " + report.UUID;
-            Console.Clear();
-
-            List<string> detailsStrings = new List<string>();
-
-            if (report.ReportType == "Maintenance Report")
-            {
-                detailsStrings.Add("Mark as Complete");
-            }
-
-            detailsStrings.Add("Go Back");
-            detailsStrings.Add("Delete");
-
-            StringBuilder foodItems = new StringBuilder("");
-
-            if (report.FoodItems != null)
-            {
-                foodItems = new StringBuilder("Foods:\n");
-
-                foreach (Item item in report.FoodItems)
-                {
-                    if(report.ReportType == "Expiry Report")
-                    {
-                        var timeLeft = item.ExpirationDate - DateTime.Now;
-
-                        foodItems.AppendLine($"  * {item.Name} ({item.Quantity}) - Expires: {item.ExpirationDate} ({(int)timeLeft.TotalDays} days left)");
-                    }else if(report.ReportType == "Shopping Report")
-                    {
-                        foodItems.AppendLine($"  * {item.Name} ({item.Quantity} left)");
-                    } else
-                    {
-                        foodItems.AppendLine($"  * {item.Name} ({item.Quantity}) - {item.Barcode} : {item.Category.Name}");
-                    }
-                }
-            }
-
-            StringBuilder items = new StringBuilder("");
-
-            if (report.Items != null)
-            {
-                items = new StringBuilder("Items:\n");
-
-                foreach (string item in report.Items)
-                {
-                    if (report.ReportType == "Maintenance Report")
-                    {
-                        DateTime completed = FridgeManager.SelectedFridge.MaintenanceDates[item];
-                        TimeSpan timeSinceCompletion = DateTime.Now - completed;
-
-                        items.AppendLine($"  * {item} was last completed: {completed} - This was {timeSinceCompletion.Days} days ago");
-                    } else
-                    {
-                        items.AppendLine("  * " + item);
-                    }
-                }
-            }
-
-            string header = @$"
-  Report: {report.UUID} ({report.ReportType})
-  {report.Message}
-  {items}{foodItems}
-  ";
-
-            string selection = UI.Selector(detailsStrings.ToArray(), header);
-
-            switch (selection)
-            {
-                case "Delete":
-                    FridgeManager.SelectedFridge.Reports.Remove(report);
-                    break;
-                case "Mark as Complete":
-                    markMaintenanceItemsAsComplete(report.Items);
-                    FridgeManager.SelectedFridge.Reports.Remove(report);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private void markMaintenanceItemsAsComplete(List<string> Items)
-        {
-            foreach (string item in Items)
-            {
-                FridgeManager.SelectedFridge.MaintenanceDates[item] = DateTime.Now;
-            }
-        }
-
-        public void displayItemsMenu()
-        {
-            Console.Title = "FridgeManager: Items";
-            Console.Clear();
-            Console.ReadLine();
-            // TODO: ...
-        }
-
-        public void displayFridgeSettingsMenu()
+        public Fridge displayFridgeSettingsMenu()
         {
             Console.Title = "FridgeManager: Fridge Settings";
             Console.Clear();
-            Console.ReadLine();
-            // TODO: ...
+
+            StringBuilder headerBuilder = new StringBuilder();
+            headerBuilder.AppendLine($"\n   Currently Editing {sf.Brand}");
+            headerBuilder.AppendLine($"  {sf.Model} in {sf.Room}.");
+            headerBuilder.AppendLine($"  Please note: You will need to restart the program for changes to take effect.");
+            string header = headerBuilder.ToString();
+
+
+            Dictionary<string, string> formResponse = UI.Form(new List<FormField>(18)
+            {
+                new FormField { ID = 0, Name = "Powered", Label = "Powered", Value = sf.Powered },
+                new FormField { ID = 1, Name = "HasFridge", Label = "Fridge", Value = sf.HasFridge},
+                new FormField { ID = 2, Name = "HasFreezer", Label = "Freezer", Value = sf.HasFreezer },
+                new FormField { ID = 3, Name = "HasIceMaker", Label = "Has Ice Maker", Value = sf.HasIceMaker },
+                new FormField { ID = 4, Name = "HasWaterDispenser", Label = "Has Water Dispenser", Value = sf.HasWaterDispenser },
+                new FormField { ID = 5, Name = "Room", Label = "Room", Value = sf.Room },
+                new FormField { ID = 6, Name = "Brand", Label = "Brand", Value = sf.Brand },
+                new FormField { ID = 7, Name = "Model", Label = "Model", Value = sf.Model },
+                new FormField { ID = 8, Name = "Colour", Label = "Colour", Value = sf.Color },
+                new FormField { ID = 9, Name = "Capacity", Label = "Capacity", Value = sf.Capacity },
+                new FormField { ID = 10, Name = "Temperature", Label = "Temperature", Value = sf.Temperature },
+                new FormField { ID = 11, Name = "Temperature_setting", Label = "Temperature Setting", Value = sf.TemperatureSetting },
+                new FormField { ID = 12, Name = "ExpiryReportDays", Label = "[Reports] Expiry Buffer (Days)", Value = sf.ExpiryReportDays },
+                new FormField { ID = 13, Name = "MaintenanceReportDays", Label = "[Reports] Maintence Reminder Frequency (Days)", Value = sf.MaintenanceReportDays },
+                new FormField { ID = 14, Name = "ReportFrequencyShopping", Label = "[Reports] Shopping Report Expiry (Days)", Value = sf.ReportFrequencies["Shopping"] },
+                new FormField { ID = 15, Name = "ReportFrequencyMaintenance", Label = "[Reports] Maintenance Report Expiry (Days)", Value = sf.ReportFrequencies["Maintenance"] },
+                new FormField { ID = 16, Name = "ReportFrequencyExpiry", Label = "[Reports] Food Expiry Report Expiry (Days)", Value = sf.ReportFrequencies["Expiry"] },
+                new FormField { ID = 17, Name = "SaveLocation", Label = "Save Location", Value = sf.SaveLocation },
+
+            });
+
+            if (Fridge.validateInput(formResponse))
+            {
+                Fridge fridge = new Fridge(formResponse, sf.UUID);
+
+                fridge.MaintenanceDates = sf.MaintenanceDates;
+                fridge.Users = sf.Users;
+                fridge.Contents = sf.Contents;
+                fridge.Reports = sf.Reports;
+
+                return fridge;
+            }
+            else
+            {
+                Console.WriteLine("[i] Skipping changes, please try again...");
+                Console.ReadLine();
+            }
+
+            return sf;
+
         }
 
-        public void displayRecipesMenu()
+        public User displayAccountSettingsMenu()
         {
-            Console.Title = "FridgeManager: Recipes";
+            Console.Title = "FridgeManager: Account Settings";
             Console.Clear();
-            Console.ReadLine();
-            // TODO: ...
-        }
-        public void displayShoppingListMenu()
-        {
-            Console.Title = "FridgeManager: Shopping List";
-            Console.Clear();
-            Console.ReadLine();
 
-            // TODO: ...
-        }
-        public void displayNotificationsMenu()
-        {
-            Console.Title = "FridgeManager: Notifications";
-            Console.Clear();
-            Console.ReadLine();
+            StringBuilder headerBuilder = new StringBuilder();
+            headerBuilder.AppendLine($"\n   Currently Editing {su.Name},");
+            headerBuilder.AppendLine($"  Currently Editing {su.Name},");
+            headerBuilder.AppendLine($"  Please note: You will need to restart the program for changes to take effect.");
+            string header = headerBuilder.ToString();
 
-            // TODO: ...
-        }
-        public void displayAccountMenu()
-        {
-            Console.Title = "FridgeManager: Account";
-            Console.Clear();
-            Console.ReadLine();
+            HashSet<string> roles = new HashSet<string>
+            {
+                "Owner",
+                "User",
+                "Guest"
+            };
 
-            // TODO: ...
+
+            Dictionary<string, string> formResponse = UI.Form(new List<FormField>(3) {
+                    new FormField { ID = 0, Name = "Name", Label = "Name", Value = su.Name },
+                    new FormField { ID = 1, Name = "Email", Label = "Email", Value = su.Email },
+                    new FormField { ID = 2, Name = "Role", Label = "Role", Options = roles, Value = su.Role },
+            }, header: header);
+
+            if (User.validateInput(formResponse))
+            {
+                User user = new User(formResponse);
+
+                user.ShoppingList = su.ShoppingList;
+                user.Notifications = su.Notifications;
+
+                // Return the modified user
+                return user;
+            }
+            else
+            {
+                Console.WriteLine("[i] Skipping changes, please try again...");
+                Console.ReadLine();
+            }
+
+            // Return the default user
+            return su;
         }
 
     }
 
+    public class FormField
+    {
+        public int ID { get; set; }
+        public string Name { get; set; }
+        public string Label { get; set; }
+        public HashSet<string> Options { get; set; }
+        public object Value { get; set; }
+    }
+
     class UI : View
     {
-
-        public static string Selector(string[] options, string prompt = "", bool vertical = false, bool splitter = true)
+        public static string Selector(string[] options, string prompt = "", bool vertical = false, bool showSplitter = true)
         {
+            // Initialize the selected index to the first option
             int selectedIndex = 0;
 
-            DisplayOptions(options, selectedIndex, vertical, prompt, splitter);
-
-            while (true)
+            try
             {
-                ConsoleKeyInfo key = Console.ReadKey(true);
+                // Display options initially
+                DisplayOptions(options, selectedIndex, vertical, prompt, showSplitter);
 
-                if (key.Key == ConsoleKey.Enter)
+                // Continue capturing input until the Enter key is pressed
+                while (true)
                 {
-                    break;
-                }
+                    // Read the key pressed by the user
+                    ConsoleKeyInfo key = Console.ReadKey(true);
 
-                HandleArrowKeys(options.Length, ref selectedIndex, key);
-                DisplayOptions(options, selectedIndex, vertical, prompt, splitter);
+                    // Break the loop if the Enter key is pressed
+                    if (key.Key == ConsoleKey.Enter)
+                    {
+                        break;
+                    }
+
+                    // Handle arrow keys to navigate through options
+                    HandleArrowKeys(options.Length, ref selectedIndex, key);
+
+                    // Redisplay options after handling input
+                    DisplayOptions(options, selectedIndex, vertical, prompt, showSplitter);
+                }
+            }
+            catch (FormatException ex)
+            {
+                // Handle FormatException (e.g., if there's an issue parsing user input)
+                Console.WriteLine($"Format error: {ex.Message}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Handle InvalidOperationException (e.g., if an operation is not valid)
+                Console.WriteLine($"Invalid operation: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // Handle other exceptions
+                Console.WriteLine($"An error occurred: {ex.Message}");
             }
 
+            // Return the selected option
             return options[selectedIndex];
         }
 
-        private static void DisplayOptions(string[] options, int selectedIndex, bool vertical, string prompt = "", bool splitter = true)
+
+
+        private static void DisplayOptions(string[] options, int selectedIndex, bool vertical, string prompt = "", bool showSplitter = true)
         {
+            // Clear the console for a clean display
             Console.Clear();
 
+            // Display optional prompt if provided
             if (!string.IsNullOrEmpty(prompt))
             {
                 Console.WriteLine(prompt);
             }
 
+            // Iterate through options and display them
             for (int i = 0; i < options.Length; i++)
             {
+                // Initialize prefix and option variables
                 string prefix;
-                string option = options[i];
+                string currentOption = options[i];
 
+                // Set prefix and adjust option for the selected item
                 if (i == selectedIndex)
                 {
                     Console.ForegroundColor = ConsoleColor.Black;
                     Console.BackgroundColor = ConsoleColor.White;
 
+                    // Set prefix for the selected item
                     prefix = "* ";
                 }
                 else
                 {
+                    // Set default prefix
                     prefix = "  ";
 
-                    if (splitter == true)
+                    // Modify option if the splitter is enabled
+                    if (showSplitter)
                     {
-                        option = options[i].Split('-')[0];
+                        currentOption = options[i].Split('-')[0];
                     }
                 }
 
+                // Display options either vertically or horizontally
                 if (vertical)
                 {
-                    Console.Write($"{prefix}{option}  ");
+                    Console.Write($"{prefix}{currentOption}  ");
                 }
                 else
                 {
-                    Console.WriteLine($"{prefix}{option}");
+                    Console.WriteLine($"{prefix}{currentOption}");
                 }
 
+                // Reset console colors for the next iteration
                 ResetConsoleColors();
             }
 
+            // Display additional instructions
             Console.WriteLine("\n[i] Use the arrow keys to move and select to enter.");
         }
+
 
         private static void HandleArrowKeys(int optionsLength, ref int selectedIndex, ConsoleKeyInfo key)
         {
@@ -324,181 +295,211 @@ namespace FridgeManager
             }
         }
 
-        public static Dictionary<string, string> Form(Dictionary<string, object> input)
+        public static Dictionary<string, string> Form(List<FormField> form, string header = "")
         {
-            Dictionary<string, string> result = new Dictionary<string, string>();
-            Dictionary<string, object> formFields = input.ToDictionary(entry => entry.Key, entry => entry.Value);
+            // Dictionary to store the final result of the form
+            Dictionary<string, string> formData = new Dictionary<string, string>();
 
-            int selectedIndex = 0;
-
-            ConsoleKeyInfo key;
-
-            DisplayFormOptions(formFields, selectedIndex);
-
-            while (true)
+            try
             {
-                key = Console.ReadKey(true);
+                // Index to keep track of the currently selected item in the form
+                int selectedIndex = 0;
 
-                HandleArrowKeys(formFields.Values.Count, ref selectedIndex, key);
+                // Console key to capture user input
+                ConsoleKeyInfo userInput;
 
-                if (key.Key == ConsoleKey.Enter || key.Key != ConsoleKey.UpArrow && key.Key != ConsoleKey.DownArrow && key.Key != ConsoleKey.Escape)
+                // Display the form options initially
+                DisplayFormOptions(form, selectedIndex, header: header);
+
+                // Continue capturing input until the user decides to exit
+                while (true)
                 {
-                    ProcessFormInput(formFields, ref selectedIndex);
+
+                    // Read the key pressed by the user
+                    userInput = Console.ReadKey(true);
+
+                    // Handle arrow keys to navigate through form options
+                    HandleArrowKeys(form.Count, ref selectedIndex, userInput);
+
+                    // Process user input when Enter key is pressed or when other keys are pressed
+                    if (userInput.Key == ConsoleKey.Enter || (userInput.Key != ConsoleKey.UpArrow && userInput.Key != ConsoleKey.DownArrow && userInput.Key != ConsoleKey.Escape))
+                    {
+                        ProcessFormInput(form, form.FirstOrDefault(field => field.ID == selectedIndex), ref selectedIndex);
+                    }
+
+                    // Exit the loop if the user presses the Escape key
+                    if (userInput.Key == ConsoleKey.Escape)
+                    {
+                        break;
+                    }
+
+                    // Redisplay form options after handling input
+                    DisplayFormOptions(form, selectedIndex, header: header);
                 }
 
-                if (key.Key == ConsoleKey.Escape)
-                {
-                    break;
-                }
-
-                DisplayFormOptions(formFields, selectedIndex);
+                // Process the inputs stored in the clonedFormFields dictionary
+                ProcessFormOutput(ref form, ref formData);
+            }
+            catch (FormatException ex)
+            {
+                // Handle FormatException (e.g., if there's an issue with format)
+                Console.WriteLine($"Format error: {ex.Message}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Handle InvalidOperationException (e.g., if an operation is not valid)
+                Console.WriteLine($"Invalid operation: {ex.Message}");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                // Handle KeyNotFoundException (e.g., if a key is not found in the dictionary)
+                Console.WriteLine($"Key not found: {ex.Message}");
+            }
+            catch (IndexOutOfRangeException ex)
+            {
+                // Handle IndexOutOfRangeException (e.g., if an index is out of range)
+                Console.WriteLine($"Index out of range: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // Handle other exceptions
+                Console.WriteLine($"An error occurred: {ex.Message}");
             }
 
-            // Process the inputs stored from the formFields
-
-            foreach (KeyValuePair<string, object> item in formFields)
-            {
-                string _key = item.Key.ToString().Split(":")[1];
-
-                object[] _value = (object[])item.Value;
-
-                object? actualValue = _value[1];
-
-                if (actualValue.GetType() == typeof(string[]))
-                {
-                    string[] _actualValue = (string[])actualValue;
-                    actualValue = _actualValue[_actualValue.Length - 1];
-                }
-
-                if (_value[1] == null)
-                {
-                    actualValue = "";
-                }
-
-                result.Add(_key, actualValue.ToString());
-            }
-
-            return result;
+            // Return the final form data
+            return formData;
         }
 
-        private static void ProcessFormInput(Dictionary<string, object> formFields, ref int selectedIndex)
+        private static void ProcessFormOutput(ref List<FormField> form, ref Dictionary<string, string> formData)
         {
-            KeyValuePair<string, object> selectedKvp = formFields.ElementAt(selectedIndex);
-
-            object[] selectedValue = (object[])selectedKvp.Value;
-
-            // Handle boolean form inputs
-            if (selectedValue[1].GetType() == typeof(bool))
+            foreach (FormField field in form)
             {
-                selectedValue[1] = !(bool)selectedValue[1]; // Toggle the boolean value
+
+                // If the actual value is null, set it to an empty string
+                if (field.Value == null)
+                {
+                    field.Value = "";
+                }
+
+                // Add the result to the formData dictionary
+                formData.Add(field.Name, field.Value.ToString());
+            }
+        }
+
+
+        private static void ProcessFormInput(List<FormField> form, FormField field, ref int selectedIndex)
+        {
+            // Handle boolean form inputs
+            if (field.Value != null && field.Value.GetType() == typeof(bool))
+            {
+                // Toggle the boolean value
+                field.Value = !(bool)field.Value;
             }
 
             // Handle string/int form inputs
-            if (selectedValue[1].GetType() == typeof(string) || selectedValue[1].GetType() == typeof(int))
+            if (field.Options == null && (field.Value == null || field.Value.GetType() == typeof(string) || field.Value.GetType() == typeof(int)))
             {
-                DisplayFormOptions(formFields, selectedIndex, true);
+                // Display form options with a prompt for user input
+                DisplayFormOptions(form, selectedIndex, true);
 
                 Console.WriteLine("\n[!] Type and press enter to confirm changes, leave blank and enter to revert changes.");
-                Console.Write("\n" + selectedValue[0] + ": ");
+                Console.Write("\n" + field.Label + ": ");
 
+                // Get user input
                 string userInput = Console.ReadLine();
 
-                if (userInput != "")
+                // Update the value if user input is provided
+                if (!string.IsNullOrEmpty(userInput))
                 {
-                    selectedValue[1] = userInput;
+                    field.Value = userInput;
                 }
 
+                // Move to the next form field
                 selectedIndex++;
 
-                if (selectedIndex == formFields.Values.Count)
+                // Wrap around to the first field if at the end of the form
+                if (selectedIndex == form.Count)
                 {
                     selectedIndex = 0;
                 }
 
+                // Clear the console for a clean display
                 Console.Clear();
             }
 
             // Handle string[] form inputs
-            if (selectedValue[1].GetType() == typeof(string[]))
+            if (field.Options != null)
             {
-                string[] options = (string[])selectedValue[1];
-                List<string> optionsList = new List<string>(options);
+                field.Value = Selector(field.Options.ToArray(), "", true);
 
-                optionsList.Add(Selector(optionsList.Distinct().ToArray(), "", true));
-                options = optionsList.ToArray();
-
-                selectedValue[1] = options;
-
+                // Clear the console for a clean display
                 Console.Clear();
             }
         }
 
-        private static void DisplayFormOptions(Dictionary<string, object> input, int selectedIndex, bool typing = false)
+        private static void DisplayFormOptions(List<FormField> form, int selectedIndex, bool typing = false, string header = "")
         {
+            // Clear the console for a clean display
             Console.Clear();
-            foreach (object i in input)
+
+            // Display optional header if provided
+            if (!string.IsNullOrEmpty(header))
             {
-                KeyValuePair<string, object> kvp = (KeyValuePair<string, object>)i;
+                Console.WriteLine(header);
+            }
 
-                string name = kvp.Key.Split(":")[1]; // name that will be saved
+            // Iterate through form fields and display options
 
-                object[] value = (object[])kvp.Value;
-
-                int index = Convert.ToInt32(kvp.Key.Split(":")[0]);
-
+            
+            foreach (FormField field in form)
+            {
                 string prefix;
 
-                if (index == selectedIndex)
+                // Set prefix and console colors based on whether the field is selected
+                if (field.ID == selectedIndex)
                 {
                     prefix = "* ";
                     Console.ForegroundColor = ConsoleColor.Black;
-                    if (typing == true)
-                    {
-                        Console.BackgroundColor = ConsoleColor.Blue;
-                    }
-                    else
-                    {
-                        Console.BackgroundColor = ConsoleColor.White;
-                    }
+
+                    // Set background color for selected field during typing or regular display
+                    Console.BackgroundColor = typing ? ConsoleColor.Blue : ConsoleColor.White;
                 }
                 else
                 {
                     prefix = "  ";
                 }
 
-                Console.Write(prefix + value[0].ToString() + ": ");
+                // Display the field name and value
+                Console.Write(prefix + field.Label + ": ");
 
-                if (value[1].GetType() == typeof(bool))
+                // Adjust console colors for boolean values
+                if (field.Value != null)
                 {
-                    if ((bool)value[1] == false)
+                    if (field.Value.GetType() == typeof(bool))
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.ForegroundColor = (bool)field.Value ? ConsoleColor.Green : ConsoleColor.Red;
                     }
-                    else
-                    {
-                        Console.ForegroundColor = ConsoleColor.Green;
-                    }
-                }
 
-                if (value[1].GetType() == typeof(string[]))
-                {
-                    string[] dispVal = (string[])value[1];
-                    Console.WriteLine(dispVal[dispVal.Length - 1].ToString());
+                    // Display the value
+                    Console.WriteLine(field.Value);
                 }
                 else
                 {
-                    Console.WriteLine(value[1]);
+                    Console.WriteLine("");
                 }
 
+                // Reset console colors for the next iteration
                 ResetConsoleColors();
             }
-
-            if (typing == false)
+            
+            // Display additional instructions if not in typing mode
+            if (!typing)
             {
                 Console.WriteLine("\n[i] Press enter to select choice.");
                 Console.WriteLine("[i] Press ESC to save and continue.");
             }
         }
+
 
         private static void ResetConsoleColors()
         {
